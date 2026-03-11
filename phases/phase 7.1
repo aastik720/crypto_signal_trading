@@ -1,0 +1,449 @@
+PROMPT FOR PHASE 7B:
+====================
+
+Project: CryptoSignal Bot
+Task: Build Candlestick Pattern brain in 
+algorithms/candle_patterns.py
+
+CONTEXT: This is Brain 7 of 7. This brain reads PRICE ACTION 
+by detecting candlestick patterns. While other brains use 
+mathematical formulas, this brain reads the "body language" 
+of price movement.
+
+Professional traders combine candlestick patterns with 
+indicators for best results. This brain adds that human-like 
+pattern recognition element.
+
+The data comes as pandas DataFrame with columns:
+[timestamp, open, high, low, close, volume] - all float type.
+
+IMPORTANT CANDLE TERMINOLOGY:
+- Body = difference between open and close
+- Upper Wick/Shadow = difference between high and max(open,close)
+- Lower Wick/Shadow = difference between low and min(open,close)
+- Bullish Candle = close > open (green candle)
+- Bearish Candle = close < open (red candle)
+- Body Size = abs(close - open)
+- Total Range = high - low
+
+BUILD algorithms/candle_patterns.py with EXACT specs:
+
+CLASS: CandlePatternAnalyzer
+
+CANDLESTICK PATTERNS TO DETECT:
+
+═══════════════════════════════════════════
+SINGLE CANDLE PATTERNS (1 candle needed):
+═══════════════════════════════════════════
+
+1. HAMMER (Bullish Reversal)
+   - Small body at TOP of candle
+   - Long LOWER wick (at least 2x body size)
+   - Little to no UPPER wick
+   - Appears after downtrend
+   - Signal: LONG
+
+2. INVERTED HAMMER (Bullish Reversal)
+   - Small body at BOTTOM of candle
+   - Long UPPER wick (at least 2x body size)
+   - Little to no LOWER wick
+   - Appears after downtrend
+   - Signal: LONG (weaker than Hammer)
+
+3. SHOOTING STAR (Bearish Reversal)
+   - Small body at BOTTOM of candle
+   - Long UPPER wick (at least 2x body size)
+   - Little to no LOWER wick
+   - Appears after UPTREND (this is what makes it different 
+     from Inverted Hammer - CONTEXT matters)
+   - Signal: SHORT
+
+4. HANGING MAN (Bearish Reversal)
+   - Same shape as Hammer
+   - BUT appears after UPTREND
+   - Signal: SHORT
+
+5. DOJI (Indecision)
+   - Body is extremely small (open ≈ close)
+   - Body < 10% of total range
+   - Types:
+     a. Standard Doji: wicks roughly equal
+     b. Dragonfly Doji: long lower wick, no upper = bullish
+     c. Gravestone Doji: long upper wick, no lower = bearish
+   - Signal: REVERSAL WARNING (depends on context)
+
+6. MARUBOZU (Strong Momentum)
+   - Bullish Marubozu: large green body, almost no wicks
+   - Bearish Marubozu: large red body, almost no wicks
+   - Body > 90% of total range
+   - Signal: continuation of current direction
+
+═══════════════════════════════════════════
+TWO CANDLE PATTERNS (2 candles needed):
+═══════════════════════════════════════════
+
+7. BULLISH ENGULFING (Strong Bullish Reversal)
+   - First candle: bearish (red, small body)
+   - Second candle: bullish (green, large body)
+   - Second candle's body COMPLETELY covers first candle's body
+   - Second open < first close AND second close > first open
+   - Appears after downtrend
+   - Signal: STRONG LONG
+
+8. BEARISH ENGULFING (Strong Bearish Reversal)
+   - First candle: bullish (green, small body)
+   - Second candle: bearish (red, large body)
+   - Second candle's body COMPLETELY covers first candle's body
+   - Second open > first close AND second close < first open
+   - Appears after uptrend
+   - Signal: STRONG SHORT
+
+9. PIERCING LINE (Bullish Reversal)
+   - First candle: bearish (red)
+   - Second candle: bullish (green)
+   - Second candle opens BELOW first candle's low
+   - Second candle closes ABOVE the MIDPOINT of first candle
+   - But does NOT completely engulf first candle
+   - Signal: LONG
+
+10. DARK CLOUD COVER (Bearish Reversal)
+    - First candle: bullish (green)
+    - Second candle: bearish (red)
+    - Second candle opens ABOVE first candle's high
+    - Second candle closes BELOW the MIDPOINT of first candle
+    - But does NOT completely engulf first candle
+    - Signal: SHORT
+
+11. TWEEZER BOTTOM (Bullish Reversal)
+    - Two candles with nearly SAME low price
+    - First candle bearish, second candle bullish
+    - Shows support at that low level
+    - Signal: LONG
+
+12. TWEEZER TOP (Bearish Reversal)
+    - Two candles with nearly SAME high price
+    - First candle bullish, second candle bearish
+    - Shows resistance at that high level
+    - Signal: SHORT
+
+═══════════════════════════════════════════
+THREE CANDLE PATTERNS (3 candles needed):
+═══════════════════════════════════════════
+
+13. MORNING STAR (Strong Bullish Reversal)
+    - Candle 1: large bearish (red) candle
+    - Candle 2: small body candle (any color) - star
+      Should gap down from candle 1 (open below candle 1 close)
+    - Candle 3: large bullish (green) candle
+      Closes above midpoint of candle 1
+    - Signal: STRONG LONG
+
+14. EVENING STAR (Strong Bearish Reversal)
+    - Candle 1: large bullish (green) candle
+    - Candle 2: small body candle (any color) - star
+      Should gap up from candle 1
+    - Candle 3: large bearish (red) candle
+      Closes below midpoint of candle 1
+    - Signal: STRONG SHORT
+
+15. THREE WHITE SOLDIERS (Bullish Continuation/Reversal)
+    - Three consecutive bullish (green) candles
+    - Each candle opens within previous candle's body
+    - Each candle closes higher than previous
+    - Each candle has relatively small upper wicks
+    - Signal: STRONG LONG
+
+16. THREE BLACK CROWS (Bearish Continuation/Reversal)
+    - Three consecutive bearish (red) candles
+    - Each candle opens within previous candle's body
+    - Each candle closes lower than previous
+    - Each candle has relatively small lower wicks
+    - Signal: STRONG SHORT
+
+═══════════════════════════════════════════
+CONTEXT DETECTION (required for accuracy):
+═══════════════════════════════════════════
+
+Many patterns REQUIRE knowing if price was in uptrend 
+or downtrend BEFORE the pattern. Example:
+- Hammer in downtrend = bullish (correct)
+- Hammer in uptrend = could be hanging man (different meaning)
+
+FUNCTIONS NEEDED:
+
+1. __init__(self)
+   - Initialize pattern storage
+   - Define thresholds:
+     * small_body_ratio = 0.3 (body < 30% of range = small)
+     * large_body_ratio = 0.7 (body > 70% of range = large)
+     * doji_ratio = 0.1 (body < 10% of range = doji)
+     * wick_ratio = 2.0 (wick must be 2x body for 
+       hammer/shooting star)
+     * engulfing_margin = 0.0 (how much bigger engulfing 
+       candle must be)
+
+2. get_candle_properties(self, row)
+   - For a single candle (DataFrame row):
+   - Calculate and return: {
+       "open": float,
+       "high": float,
+       "low": float,
+       "close": float,
+       "body_size": abs(close - open),
+       "upper_wick": high - max(open, close),
+       "lower_wick": min(open, close) - low,
+       "total_range": high - low,
+       "is_bullish": close > open,
+       "is_bearish": close < open,
+       "body_ratio": body_size / total_range if range > 0,
+       "upper_wick_ratio": upper_wick / body_size if body > 0,
+       "lower_wick_ratio": lower_wick / body_size if body > 0
+     }
+   - Handle edge case: total_range = 0 (flat candle)
+   - Handle edge case: body_size = 0 (doji)
+
+3. determine_prior_trend(self, df, index, lookback=10)
+   - Check if there was an uptrend or downtrend before 
+     the candle at 'index'
+   - Method: Compare close prices over last 'lookback' candles
+     * If close[index-1] > close[index-lookback]: UPTREND
+     * If close[index-1] < close[index-lookback]: DOWNTREND
+     * Also check: were majority of recent candles green(up) 
+       or red(down)?
+   - Return: "UPTREND", "DOWNTREND", "SIDEWAYS"
+
+4. detect_single_patterns(self, df, index)
+   - Check the candle at 'index' for single candle patterns
+   - Get candle properties
+   - Get prior trend
+   - Check each pattern:
+     a. Hammer: small body at top, lower_wick > 2x body, 
+        upper_wick < 0.3x body, prior trend = DOWN
+     b. Inverted Hammer: small body at bottom, 
+        upper_wick > 2x body, lower_wick < 0.3x body, 
+        prior trend = DOWN
+     c. Shooting Star: same shape as inverted hammer, 
+        but prior trend = UP
+     d. Hanging Man: same shape as hammer, 
+        but prior trend = UP
+     e. Doji: body_ratio < 0.1
+        - Dragonfly: lower_wick > 3x body, tiny upper wick
+        - Gravestone: upper_wick > 3x body, tiny lower wick
+     f. Bullish Marubozu: body_ratio > 0.9, is_bullish
+     g. Bearish Marubozu: body_ratio > 0.9, is_bearish
+   - Return: list of detected patterns with their signals
+
+5. detect_two_candle_patterns(self, df, index)
+   - Check candles at index-1 and index for 2-candle patterns
+   - Get properties of both candles
+   - Get prior trend
+   - Check each pattern:
+     a. Bullish Engulfing: 
+        candle1 bearish, candle2 bullish,
+        candle2_body covers candle1_body completely,
+        prior trend = DOWN
+     b. Bearish Engulfing:
+        candle1 bullish, candle2 bearish,
+        candle2_body covers candle1_body completely,
+        prior trend = UP
+     c. Piercing Line:
+        candle1 bearish, candle2 bullish,
+        candle2_open < candle1_low,
+        candle2_close > midpoint(candle1_open, candle1_close),
+        prior trend = DOWN
+     d. Dark Cloud Cover:
+        candle1 bullish, candle2 bearish,
+        candle2_open > candle1_high,
+        candle2_close < midpoint(candle1_open, candle1_close),
+        prior trend = UP
+     e. Tweezer Bottom:
+        abs(candle1_low - candle2_low) < 0.1% of price,
+        candle1 bearish, candle2 bullish,
+        prior trend = DOWN
+     f. Tweezer Top:
+        abs(candle1_high - candle2_high) < 0.1% of price,
+        candle1 bullish, candle2 bearish,
+        prior trend = UP
+   - Return: list of detected patterns
+
+6. detect_three_candle_patterns(self, df, index)
+   - Check candles at index-2, index-1, index
+   - Get properties of all three candles
+   - Get prior trend
+   - Check each pattern:
+     a. Morning Star:
+        candle1 large bearish (body_ratio > 0.6),
+        candle2 small body (body_ratio < 0.3),
+        candle3 large bullish (body_ratio > 0.6),
+        candle3_close > midpoint of candle1,
+        prior trend = DOWN
+     b. Evening Star:
+        candle1 large bullish,
+        candle2 small body,
+        candle3 large bearish,
+        candle3_close < midpoint of candle1,
+        prior trend = UP
+     c. Three White Soldiers:
+        all three candles bullish,
+        each close higher than previous close,
+        each open within previous body,
+        each has small upper wick (< 30% of body)
+     d. Three Black Crows:
+        all three candles bearish,
+        each close lower than previous close,
+        each open within previous body,
+        each has small lower wick (< 30% of body)
+   - Return: list of detected patterns
+
+7. detect_all_patterns(self, df)
+   - Run detection on the LAST/MOST RECENT candles
+   - Check single patterns on last candle
+   - Check two-candle patterns on last 2 candles
+   - Check three-candle patterns on last 3 candles
+   - Combine all found patterns
+   - Return: list of {
+       "pattern_name": "BULLISH_ENGULFING" etc,
+       "pattern_type": "SINGLE"/"DOUBLE"/"TRIPLE",
+       "signal": "LONG"/"SHORT"/"NEUTRAL",
+       "strength": "STRONG"/"MODERATE"/"WEAK",
+       "reliability": 0-100 (how reliable this pattern is)
+     }
+
+8. get_pattern_reliability(self, pattern_name)
+   - Each pattern has different reliability:
+   
+   STRONG PATTERNS (reliability 75-90):
+   - Bullish/Bearish Engulfing: 83
+   - Morning Star / Evening Star: 78
+   - Three White Soldiers / Three Black Crows: 82
+   
+   MODERATE PATTERNS (reliability 55-74):
+   - Hammer: 65
+   - Shooting Star: 63
+   - Piercing Line / Dark Cloud Cover: 60
+   - Tweezer Top/Bottom: 58
+   
+   WEAK PATTERNS (reliability 40-54):
+   - Inverted Hammer: 52
+   - Hanging Man: 50
+   - Doji: 48 (needs confirmation)
+   - Marubozu: 55 (continuation, not reversal)
+   
+   Return: reliability score
+
+9. analyze(self, df) ← THIS IS THE MAIN FUNCTION
+   - Takes full DataFrame
+   - Must have at least 15 candles (10 for trend + 3 for patterns + buffer)
+   - Detect ALL patterns on recent candles
+   - Also check 2nd and 3rd most recent positions 
+     (pattern might have formed 1-2 candles ago and still valid)
+   - Calculate score
+   
+   SCORING LOGIC:
+   Base score starts at 50 (neutral)
+   
+   FOR EACH DETECTED PATTERN:
+   
+   LONG patterns add to score:
+   + Strong bullish pattern (Engulfing, Morning Star, 
+     3 White Soldiers): +20
+   + Moderate bullish pattern (Hammer, Piercing, 
+     Tweezer Bottom): +12
+   + Weak bullish pattern (Inverted Hammer, 
+     Dragonfly Doji): +6
+   + Bullish Marubozu (continuation): +8
+   
+   SHORT patterns subtract from score:
+   - Strong bearish pattern (Engulfing, Evening Star, 
+     3 Black Crows): -20
+   - Moderate bearish pattern (Shooting Star, Dark Cloud, 
+     Tweezer Top): -12
+   - Weak bearish pattern (Hanging Man, 
+     Gravestone Doji): -6
+   - Bearish Marubozu (continuation): -8
+   
+   MULTIPLE PATTERNS BONUS:
+   + If 2 bullish patterns found: additional +8
+   + If 2 bearish patterns found: additional -8
+   + Conflicting patterns: reduce confidence
+   
+   CONTEXT BONUS:
+   + Pattern appears at S/R level (if we can detect): +5
+     (Note: this brain doesn't know S/R, signal_engine 
+     will combine this with Brain 6)
+   + Pattern with high volume: +5
+   + Pattern against trend (reversal): higher impact
+   + Pattern with trend (continuation): lower impact but 
+     more reliable
+   
+   NO PATTERNS FOUND:
+   If no recognizable patterns: score stays at 50 (NEUTRAL)
+   confidence = 0
+   This is fine - not every moment has a clear pattern
+   
+   Cap final score between 0 and 100
+   
+   Score to direction mapping (same as other brains):
+   - Score 0-30: Strong SHORT, confidence = (50-score)*2
+   - Score 30-45: Weak SHORT, confidence = (50-score)*2
+   - Score 45-55: NEUTRAL, confidence = 0
+   - Score 55-70: Weak LONG, confidence = (score-50)*2
+   - Score 70-100: Strong LONG, confidence = (score-50)*2
+   
+   RETURN FORMAT:
+   {
+     "brain": "CANDLE_PATTERNS",
+     "direction": "LONG" / "SHORT" / "NEUTRAL",
+     "confidence": 0-100,
+     "patterns_found": [
+       {
+         "name": "BULLISH_ENGULFING",
+         "type": "DOUBLE",
+         "signal": "LONG",
+         "strength": "STRONG",
+         "reliability": 83,
+         "candles_ago": 0
+       }
+     ],
+     "pattern_count": int,
+     "prior_trend": "UPTREND"/"DOWNTREND"/"SIDEWAYS",
+     "details": {
+       "total_bullish_patterns": int,
+       "total_bearish_patterns": int,
+       "strongest_pattern": pattern name or "NONE",
+       "strongest_signal": "LONG"/"SHORT"/"NEUTRAL",
+       "context_appropriate": True/False 
+         (is the pattern appearing in right context?
+          e.g., bullish reversal in downtrend = appropriate)
+     }
+   }
+
+REQUIREMENTS:
+- Calculate EVERYTHING from scratch (NO ta library, 
+  NO talib, NO candlestick library)
+- Every pattern detection must be precise with exact 
+  mathematical conditions
+- Handle all edge cases:
+  * Flat candles (open == close == high == low)
+  * Very small candles (range < 0.01% of price)
+  * Not enough candles for pattern detection
+  * NaN values in data
+- Every function must have try-except error handling
+- Every function must have docstring
+- Be CONSERVATIVE with pattern detection
+  (better to miss a pattern than detect a false one)
+- Minimum DataFrame length: 15 candles
+  If less: return NEUTRAL with 0 confidence
+- Follow EXACT same code structure as other brains
+- Must return SAME format as other brains
+- Import Config from config.settings
+- Log when patterns are detected (especially strong ones)
+
+PATTERN DETECTION STRICTNESS:
+- Use STRICT criteria (avoid false positives)
+- A pattern must meet ALL conditions to be counted
+- When in doubt, don't count it
+- It's okay to return NEUTRAL frequently
+  (no pattern = no signal from this brain)
+  Signal engine combines 7 brains, so one being neutral 
+  is fine as long as others have opinions

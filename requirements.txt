@@ -1,0 +1,36 @@
+# ============================================
+# CRYPTO SIGNAL BOT - DEPENDENCIES
+# ============================================
+
+# Telegram bot framework (async support)
+python-telegram-bot==20.7
+
+# Environment variable loader
+python-dotenv==1.0.0
+
+# WebSocket connections for real-time crypto data
+websockets==12.0
+
+# Async HTTP client for API calls
+aiohttp==3.9.1
+
+# Data manipulation and analysis
+pandas==2.1.4
+
+# Numerical computations for indicators
+numpy==1.26.2
+
+# Technical analysis library (RSI, MACD, Bollinger, etc.)
+ta==0.11.0
+
+# Razorpay payment gateway SDK
+razorpay==1.4.1
+
+# Async SQLite database driver
+aiosqlite==0.19.0
+
+# Job scheduler for periodic signal generation
+apscheduler==3.10.4
+
+# HTTP requests library
+requests==2.31.0

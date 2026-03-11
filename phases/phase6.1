@@ -1,0 +1,311 @@
+PROMPT FOR PHASE 6B:
+====================
+
+Project: CryptoSignal Bot
+Task: Build Support & Resistance brain in 
+algorithms/support_resistance.py
+
+CONTEXT: This is Brain 6 of 7. This brain finds KEY PRICE 
+LEVELS where price is likely to bounce or reverse. 
+
+Without this brain, the bot might send a LONG signal right 
+below a MAJOR resistance level where price will reject.
+Or send a SHORT signal right above MAJOR support where 
+price will bounce.
+
+This brain answers: "Is price at an important level and 
+what is it likely to do here?"
+
+The data comes as pandas DataFrame with columns:
+[timestamp, open, high, low, close, volume] - all float type.
+
+This brain follows SAME return format as other brains:
+{
+  "brain": name,
+  "direction": "LONG"/"SHORT"/"NEUTRAL",
+  "confidence": 0-100,
+  ...details
+}
+
+BUILD algorithms/support_resistance.py with EXACT specs:
+
+CLASS: SupportResistanceAnalyzer
+
+WHAT IS SUPPORT & RESISTANCE (for accuracy):
+
+SUPPORT:
+- A price level where price STOPS FALLING and bounces UP
+- Created by concentration of BUYERS at that level
+- The more times price bounces from a level = STRONGER support
+- When support BREAKS, it often becomes RESISTANCE
+- Example: BTC bounced from $42,000 three times = strong support
+
+RESISTANCE:
+- A price level where price STOPS RISING and drops DOWN
+- Created by concentration of SELLERS at that level
+- The more times price rejects from a level = STRONGER resistance
+- When resistance BREAKS, it often becomes SUPPORT
+- Example: BTC rejected from $45,000 four times = strong resistance
+
+HOW TO FIND S/R LEVELS PROGRAMMATICALLY:
+
+Method 1: SWING HIGHS AND SWING LOWS
+- Swing High: A candle whose HIGH is higher than the HIGH of 
+  the N candles before AND after it
+- Swing Low: A candle whose LOW is lower than the LOW of 
+  the N candles before AND after it
+- These swing points ARE the S/R levels
+
+Method 2: PRICE CLUSTERING
+- Group nearby price levels together (within 0.5% of each other)
+- Count how many times price touched that zone
+- More touches = stronger level
+
+Method 3: VOLUME AT PRICE LEVELS
+- High volume at a price level = strong S/R
+- Low volume at a price level = weak S/R
+
+ADVANCED S/R ANALYSIS WE NEED:
+
+1. Find All Support Levels (below current price)
+2. Find All Resistance Levels (above current price)
+3. Rank levels by STRENGTH (touch count + volume + recency)
+4. Find NEAREST support and resistance to current price
+5. Check if price is AT a key level right now
+6. Detect BREAKOUT (price breaking through a level)
+7. Detect BOUNCE (price rejecting from a level)
+8. Detect ROLE REVERSAL (old support becoming resistance 
+   or vice versa)
+9. Calculate DISTANCE to nearest levels (as percentage)
+
+FUNCTIONS NEEDED:
+
+1. __init__(self, swing_lookback=5, cluster_threshold=0.5)
+   - swing_lookback: how many candles on each side to confirm 
+     swing point (default 5 means 5 before + 5 after)
+   - cluster_threshold: percentage to group nearby levels 
+     (0.5 means levels within 0.5% are same zone)
+   - Initialize storage for found levels
+
+2. find_swing_highs(self, df, lookback=5)
+   - Scan through DataFrame
+   - A candle at index i is a swing high if:
+     df['high'][i] > df['high'][i-1] AND
+     df['high'][i] > df['high'][i-2] AND ... (lookback candles)
+     df['high'][i] > df['high'][i+1] AND
+     df['high'][i] > df['high'][i+2] AND ... (lookback candles)
+   - Cannot check last 'lookback' candles (not enough future data)
+     For those, use reduced lookback (2 or 3)
+   - Return: list of {
+       "price": float,
+       "index": int,
+       "timestamp": datetime,
+       "volume_at_level": float
+     }
+
+3. find_swing_lows(self, df, lookback=5)
+   - Same logic but for LOWs
+   - Return same format as swing_highs
+
+4. cluster_levels(self, levels, threshold_percent=0.5)
+   - Group nearby levels together
+   - If two levels are within threshold% of each other, 
+     merge them into ONE zone
+   - Zone price = average of all levels in cluster
+   - Zone strength = count of levels in cluster
+   - Return: list of {
+       "price": average price of zone,
+       "strength": number of touches/levels in cluster,
+       "type": "SUPPORT"/"RESISTANCE",
+       "touch_count": how many times price reached this zone,
+       "first_seen": earliest timestamp,
+       "last_seen": latest timestamp
+     }
+   - Sort by strength (strongest first)
+
+5. classify_levels(self, clustered_levels, current_price)
+   - Levels BELOW current price = SUPPORT
+   - Levels ABOVE current price = RESISTANCE
+   - Return: {
+       "support_levels": [sorted by distance, nearest first],
+       "resistance_levels": [sorted by distance, nearest first]
+     }
+
+6. get_nearest_support(self, support_levels, current_price)
+   - Return the closest support level below current price
+   - Return: {
+       "price": float,
+       "distance_percent": float (how far from current price),
+       "strength": int (touch count)
+     }
+   - Return None if no support found
+
+7. get_nearest_resistance(self, resistance_levels, current_price)
+   - Same but for resistance above current price
+   - Return same format
+   - Return None if no resistance found
+
+8. is_at_level(self, current_price, level_price, 
+   tolerance_percent=0.3)
+   - Check if current price is NEAR a S/R level
+   - "Near" means within tolerance% (default 0.3%)
+   - Return True/False
+
+9. detect_bounce(self, df, level_price, level_type, 
+   lookback=5)
+   - Check last 'lookback' candles
+   - For SUPPORT bounce:
+     * Price came down to near support level
+     * Then reversed upward
+     * Current candle closing above the low point
+     * Confirmation: current close > previous close
+   - For RESISTANCE bounce (rejection):
+     * Price went up to near resistance level
+     * Then reversed downward
+     * Current candle closing below the high point
+   - Return: {
+       "bounce_detected": True/False,
+       "bounce_type": "SUPPORT_BOUNCE" / "RESISTANCE_REJECTION",
+       "bounce_strength": 0-100,
+       "confirmation_candles": how many candles confirm bounce
+     }
+
+10. detect_breakout(self, df, levels, lookback=3)
+    - Check if price has broken through any key level
+    - BREAKOUT criteria:
+      * Price closes ABOVE resistance (not just wick)
+      * At least 2 consecutive candles above the level
+      * Volume should be above average (if volume data available)
+    - BREAKDOWN criteria:
+      * Price closes BELOW support
+      * At least 2 consecutive candles below the level
+    - Return: {
+        "breakout_detected": True/False,
+        "breakout_type": "BREAKOUT_UP" / "BREAKDOWN" / "NONE",
+        "broken_level": float price of broken level,
+        "level_strength": how strong was the broken level,
+        "confirmed": True/False (2+ candles beyond level)
+      }
+
+11. detect_role_reversal(self, df, levels, lookback=20)
+    - Check if a broken support is now acting as resistance
+    - Check if a broken resistance is now acting as support
+    - Example: Price broke above $45,000 resistance
+      Then pulled back and bounced FROM $45,000 (now support)
+    - Return: {
+        "role_reversal_detected": True/False,
+        "level": float price,
+        "old_role": "SUPPORT"/"RESISTANCE",
+        "new_role": "RESISTANCE"/"SUPPORT"
+      }
+
+12. calculate_level_strength(self, level, df)
+    - Score a level's strength from 0-100:
+      * Touch count: more touches = stronger
+        1 touch = 10, 2 = 25, 3 = 45, 4 = 60, 5+ = 80
+      * Recency: recent levels are more relevant
+        Tested in last 10 candles = +20
+        Tested in last 30 candles = +10
+        Only tested long ago = +0
+      * Volume: high volume at level = stronger
+        Above average volume = +10
+      * Duration: level held for many candles = stronger
+    - Return: strength score 0-100
+
+13. analyze(self, df) ← THIS IS THE MAIN FUNCTION
+    - Takes the full DataFrame
+    - Finds ALL swing highs and lows
+    - Clusters them into S/R zones
+    - Classifies as support or resistance
+    - Checks current price position relative to levels
+    - Detects bounces, breakouts, role reversals
+    - Calculates score
+    
+    SCORING LOGIC:
+    Base score starts at 50 (neutral)
+    
+    FOR LONG SIGNALS (add to score):
+    + Price bouncing from STRONG support: +20
+    + Price bouncing from MODERATE support: +12
+    + Price bouncing from WEAK support: +5
+    + Breakout above resistance (confirmed): +22
+    + Breakout above resistance (unconfirmed): +10
+    + Role reversal (resistance became support, holding): +15
+    + Price far from nearest resistance (room to run): +8
+    + Price at support with high volume: +10
+    + Multiple support levels nearby (confluence): +10
+    
+    FOR SHORT SIGNALS (subtract from score):
+    - Price rejecting from STRONG resistance: -20
+    - Price rejecting from MODERATE resistance: -12
+    - Price rejecting from WEAK resistance: -5
+    - Breakdown below support (confirmed): -22
+    - Breakdown below support (unconfirmed): -10
+    - Role reversal (support became resistance, holding): -15
+    - Price far from nearest support (room to fall): -8
+    - Price at resistance with high volume: -10
+    - Multiple resistance levels nearby (confluence): -10
+    
+    SPECIAL ADJUSTMENTS:
+    + Price in "no man's land" (far from any S/R): 
+      reduce confidence, score stays near 50
+    + Price between very tight S/R (squeezed): 
+      prepare for big move, note in details
+    
+    Cap final score between 0 and 100
+    
+    Score to direction mapping (same as other brains):
+    - Score 0-30: Strong SHORT, confidence = (50-score)*2
+    - Score 30-45: Weak SHORT, confidence = (50-score)*2
+    - Score 45-55: NEUTRAL, confidence = 0
+    - Score 55-70: Weak LONG, confidence = (score-50)*2
+    - Score 70-100: Strong LONG, confidence = (score-50)*2
+    
+    RETURN FORMAT:
+    {
+      "brain": "SUPPORT_RESISTANCE",
+      "direction": "LONG" / "SHORT" / "NEUTRAL",
+      "confidence": 0-100,
+      "current_price": float,
+      "nearest_support": {
+        "price": float,
+        "distance_percent": float,
+        "strength": 0-100,
+        "touch_count": int
+      },
+      "nearest_resistance": {
+        "price": float,
+        "distance_percent": float,
+        "strength": 0-100,
+        "touch_count": int
+      },
+      "details": {
+        "total_support_levels": int,
+        "total_resistance_levels": int,
+        "at_support": True/False,
+        "at_resistance": True/False,
+        "bounce": bounce detection result,
+        "breakout": breakout detection result,
+        "role_reversal": role reversal result,
+        "support_zones": [list of top 3 support levels],
+        "resistance_zones": [list of top 3 resistance levels],
+        "price_position": "NEAR_SUPPORT" / "NEAR_RESISTANCE" / 
+          "MID_RANGE" / "ABOVE_ALL" / "BELOW_ALL"
+      }
+    }
+
+REQUIREMENTS:
+- Calculate EVERYTHING from scratch (no ta library)
+- Handle small DataFrames (minimum 30 candles needed)
+- If less than 30 candles: return NEUTRAL with 0 confidence
+- All swing detection must handle edge cases at DataFrame 
+  boundaries
+- Clustering must handle case where only 1-2 levels found
+- Must handle case where no clear S/R levels exist
+  (return NEUTRAL)
+- All functions must have try-except error handling
+- All functions must have docstrings
+- Must be efficient - avoid O(n³) algorithms
+- Follow EXACT same code structure as other brains
+- Import Config from config.settings
+- Log important findings (strong levels, breakouts, bounces)

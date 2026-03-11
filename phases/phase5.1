@@ -1,0 +1,304 @@
+PROMPT FOR PHASE 5B:
+====================
+
+Project: CryptoSignal Bot
+Task: Build EMA Crossover brain in algorithms/ema_crossover.py
+
+CONTEXT: This is Brain 5 of 7. This brain determines the 
+OVERALL TREND direction. It is the most important filter 
+because trading AGAINST the trend is the #1 reason for losses.
+
+This brain answers ONE critical question:
+"Is the market going UP or DOWN right now?"
+
+The data comes as pandas DataFrame with columns:
+[timestamp, open, high, low, close, volume] - all float type.
+
+This brain follows the SAME return format as existing brains 
+(RSI, MACD, Bollinger, Volume) which return:
+{
+  "brain": name,
+  "direction": "LONG"/"SHORT"/"NEUTRAL",
+  "confidence": 0-100,
+  ...details
+}
+
+BUILD algorithms/ema_crossover.py with these EXACT specs:
+
+CLASS: EMACrossoverAnalyzer
+
+WHAT IS EMA (for algorithm accuracy):
+- EMA = Exponential Moving Average
+- Gives MORE weight to recent prices (reacts faster than SMA)
+- Multiple EMAs at different periods show trend at different 
+  timeframes
+- When fast EMA crosses above slow EMA = BULLISH
+- When fast EMA crosses below slow EMA = BEARISH
+- When price is above EMA = BULLISH bias
+- When price is below EMA = BEARISH bias
+
+EMA PERIODS WE USE:
+- EMA 9   (ultra short term - scalping)
+- EMA 21  (short term - swing)
+- EMA 50  (medium term - trend)
+- EMA 100 (long term - major trend)
+- EMA 200 (very long term - overall market direction)
+
+ADVANCED EMA ANALYSIS WE NEED:
+
+1. EMA Alignment Check:
+   - PERFECT BULLISH: EMA9 > EMA21 > EMA50 > EMA100 > EMA200
+     (all EMAs stacked in order = very strong uptrend)
+   - PERFECT BEARISH: EMA9 < EMA21 < EMA50 < EMA100 < EMA200
+     (all EMAs stacked in reverse = very strong downtrend)
+   - MIXED/TANGLED: EMAs crossing each other = no clear trend
+   
+2. EMA Crossover Detection:
+   - EMA9 crosses above EMA21 = short term bullish cross
+   - EMA9 crosses below EMA21 = short term bearish cross
+   - EMA21 crosses above EMA50 = medium term bullish cross
+   - EMA21 crosses below EMA50 = medium term bearish cross
+   - EMA50 crosses above EMA200 = GOLDEN CROSS (very bullish)
+   - EMA50 crosses below EMA200 = DEATH CROSS (very bearish)
+
+3. Price Position vs EMAs:
+   - Price above ALL EMAs = strong bullish
+   - Price below ALL EMAs = strong bearish
+   - Price between EMAs = mixed/consolidation
+   - Price just bounced off an EMA = dynamic support/resistance
+
+4. EMA Slope Analysis:
+   - All EMAs sloping UP = strong uptrend
+   - All EMAs sloping DOWN = strong downtrend
+   - EMAs flattening = trend losing momentum
+   - EMAs curving = potential trend change
+
+5. EMA Distance Analysis:
+   - EMAs far apart = strong trend (but might be overextended)
+   - EMAs close together = weak trend or consolidation
+   - EMAs converging = trend change coming
+   - EMAs diverging = trend strengthening
+
+6. EMA Bounce Detection:
+   - Price pulls back to EMA and bounces = trend continuation
+   - EMA 21 bounce = short term support in uptrend
+   - EMA 50 bounce = strong support in uptrend
+   - EMA 200 bounce = major support level
+
+FUNCTIONS NEEDED:
+
+1. __init__(self)
+   - Set EMA periods: [9, 21, 50, 100, 200]
+   - Initialize result storage
+
+2. calculate_ema(self, series, period)
+   - Calculate EMA from scratch
+   - Input: pandas Series (close prices), period (int)
+   - Formula: 
+     multiplier = 2 / (period + 1)
+     EMA = (close - previous_EMA) × multiplier + previous_EMA
+     First EMA = SMA of first 'period' values
+   - Return: pandas Series of EMA values
+   - Handle edge case: not enough data for period
+
+3. calculate_all_emas(self, df)
+   - Calculate EMA 9, 21, 50, 100, 200 for the DataFrame
+   - Return dictionary: {
+       "ema_9": pandas Series,
+       "ema_21": pandas Series,
+       "ema_50": pandas Series,
+       "ema_100": pandas Series,
+       "ema_200": pandas Series
+     }
+   - Handle case where not enough data for EMA 200 
+     (need 200+ candles, we might only have 100)
+     In that case, skip EMA 200 and work with what we have
+
+4. check_ema_alignment(self, emas, current_index=-1)
+   - Check if EMAs are aligned at the latest candle
+   - Get latest value of each EMA
+   - Check order:
+     * If ema9 > ema21 > ema50 > ema100 > ema200 
+       → "PERFECT_BULLISH"
+     * If ema9 > ema21 > ema50 > ema100 (no 200 available)
+       → "STRONG_BULLISH"
+     * If ema9 > ema21 > ema50 → "MODERATE_BULLISH"
+     * If ema9 > ema21 → "WEAK_BULLISH"
+     * Reverse for bearish
+     * Otherwise → "TANGLED" (no clear alignment)
+   - Return: {
+       "alignment": "PERFECT_BULLISH" / "STRONG_BULLISH" / 
+         "MODERATE_BULLISH" / "WEAK_BULLISH" / 
+         "PERFECT_BEARISH" / "STRONG_BEARISH" / 
+         "MODERATE_BEARISH" / "WEAK_BEARISH" / "TANGLED",
+       "bullish_count": how many EMA pairs are bullish aligned,
+       "bearish_count": how many EMA pairs are bearish aligned
+     }
+
+5. detect_crossovers(self, emas, lookback=5)
+   - Check last 'lookback' candles for any EMA crossovers
+   - Check these pairs: (9,21), (21,50), (50,100), (50,200)
+   - For each pair, check if fast crossed above or below slow
+   - Crossover detection: 
+     Previous candle: fast < slow
+     Current candle: fast > slow → BULLISH CROSS
+     (and vice versa for bearish)
+   - Return: {
+       "crossovers": [
+         {"fast": 9, "slow": 21, "type": "BULLISH", 
+          "candles_ago": 1},
+         {"fast": 50, "slow": 200, "type": "BEARISH", 
+          "candles_ago": 3}
+       ],
+       "golden_cross": True/False,
+       "death_cross": True/False,
+       "most_recent": "BULLISH"/"BEARISH"/"NONE"
+     }
+
+6. check_price_position(self, df, emas)
+   - Check where current price is relative to all EMAs
+   - Current close vs each EMA value
+   - Return: {
+       "above_ema9": True/False,
+       "above_ema21": True/False,
+       "above_ema50": True/False,
+       "above_ema100": True/False,
+       "above_ema200": True/False,
+       "above_count": N (how many EMAs price is above),
+       "below_count": N,
+       "position": "ABOVE_ALL" / "BELOW_ALL" / "MIXED"
+     }
+
+7. calculate_ema_slopes(self, emas, lookback=5)
+   - For each EMA, calculate slope over last 'lookback' candles
+   - Slope = (current_ema - ema_lookback_ago) / lookback
+   - Normalize slope as percentage of price
+   - Classify: "RISING", "FALLING", "FLAT" 
+     (flat if slope < 0.05% of price)
+   - Return: {
+       "ema_9_slope": "RISING"/"FALLING"/"FLAT",
+       "ema_21_slope": "RISING"/"FALLING"/"FLAT",
+       "ema_50_slope": "RISING"/"FALLING"/"FLAT",
+       "ema_100_slope": "RISING"/"FALLING"/"FLAT",
+       "ema_200_slope": "RISING"/"FALLING"/"FLAT",
+       "all_rising": True/False,
+       "all_falling": True/False,
+       "overall_slope": "BULLISH"/"BEARISH"/"NEUTRAL"
+     }
+
+8. calculate_ema_distance(self, emas)
+   - Calculate distance between EMAs as percentage
+   - distance_9_21 = abs(ema9 - ema21) / ema21 × 100
+   - Same for all pairs
+   - If distance is large (>2%) = strong trend but overextended
+   - If distance is tiny (<0.3%) = consolidation/no trend
+   - Return: {
+       "ema_9_21_distance": float percentage,
+       "ema_21_50_distance": float percentage,
+       "ema_50_200_distance": float percentage,
+       "spread_condition": "WIDE"/"NORMAL"/"TIGHT"/"CONVERGING",
+       "overextended": True/False
+     }
+
+9. detect_ema_bounce(self, df, emas, tolerance_percent=0.3)
+   - Check if price recently touched an EMA and bounced
+   - "Touched" means price came within tolerance% of EMA
+   - "Bounced" means price moved away from EMA in next candle(s)
+   - Check last 5 candles
+   - Return: {
+       "bounce_detected": True/False,
+       "bounced_from": "EMA_9"/"EMA_21"/"EMA_50"/"EMA_200"/None,
+       "bounce_direction": "UP"/"DOWN"/None,
+       "bounce_strength": 0-100
+     }
+
+10. analyze(self, df) ← THIS IS THE MAIN FUNCTION
+    - Takes the full DataFrame
+    - Calculates ALL EMAs
+    - Runs ALL above analyses
+    - Calculates a SCORE from 0-100
+    - Determines DIRECTION: "LONG", "SHORT", or "NEUTRAL"
+    
+    SCORING LOGIC:
+    Base score starts at 50 (neutral)
+    
+    FOR LONG SIGNALS (add to score):
+    + Perfect bullish alignment: +20
+    + Strong bullish alignment: +15
+    + Moderate bullish alignment: +10
+    + Weak bullish alignment: +5
+    + Price above all EMAs: +10
+    + All EMAs sloping up: +10
+    + Golden cross detected: +15
+    + EMA9/21 bullish cross: +8
+    + EMA21/50 bullish cross: +10
+    + Bounce up from EMA support: +10
+    + EMAs diverging upward: +5
+    
+    FOR SHORT SIGNALS (subtract from score):
+    - Perfect bearish alignment: -20
+    - Strong bearish alignment: -15
+    - Moderate bearish alignment: -10
+    - Weak bearish alignment: -5
+    - Price below all EMAs: -10
+    - All EMAs sloping down: -10
+    - Death cross detected: -15
+    - EMA9/21 bearish cross: -8
+    - EMA21/50 bearish cross: -10
+    - Bounce down from EMA resistance: -10
+    - EMAs diverging downward: -5
+    
+    SPECIAL ADJUSTMENTS:
+    + If overextended in current direction: reduce by 5
+      (trend might reverse)
+    + EMAs tangled/no trend: force score toward 50
+    
+    Cap final score between 0 and 100
+    
+    Score to direction mapping:
+    - Score 0-30: Strong SHORT, confidence = (50-score)*2
+    - Score 30-45: Weak SHORT, confidence = (50-score)*2  
+    - Score 45-55: NEUTRAL, confidence = 0
+    - Score 55-70: Weak LONG, confidence = (score-50)*2
+    - Score 70-100: Strong LONG, confidence = (score-50)*2
+    
+    RETURN FORMAT:
+    {
+      "brain": "EMA_CROSSOVER",
+      "direction": "LONG" / "SHORT" / "NEUTRAL",
+      "confidence": 0-100,
+      "current_price": current close price,
+      "ema_values": {
+        "ema_9": latest value,
+        "ema_21": latest value,
+        "ema_50": latest value,
+        "ema_100": latest value,
+        "ema_200": latest value or None
+      },
+      "details": {
+        "alignment": alignment result,
+        "crossovers": crossover result,
+        "price_position": price position result,
+        "slopes": slope result,
+        "ema_distance": distance result,
+        "bounce": bounce result,
+        "trend_strength": "STRONG"/"MODERATE"/"WEAK"/"NONE"
+      }
+    }
+
+REQUIREMENTS:
+- Calculate ALL EMAs from scratch (NO ta library)
+- Handle case where DataFrame has fewer than 200 rows
+  (skip EMA 200, work with available EMAs)
+- Handle case where DataFrame has fewer than 100 rows
+  (skip EMA 100 and 200)
+- Minimum required: 50 candles for basic analysis
+- If less than 50 candles, return NEUTRAL with 0 confidence
+- All functions must have try-except error handling
+- All functions must have docstring explaining what it does
+- Must be fast - this runs every 10 minutes for 10 pairs
+- Follow EXACT same code structure as existing brains
+  (rsi.py, macd.py, bollinger.py, volume.py)
+- Import Config from config.settings
+- Log important findings (golden cross, death cross, 
+  perfect alignment)
