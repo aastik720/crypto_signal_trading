@@ -979,10 +979,15 @@ class BinanceDataFetcher:
 
         try:
             # ------ Fetch raw kline data ------
+            try:
+                candle_limit = Config.CANDLE_LIMIT
+            except AttributeError:
+                candle_limit = 250
+
             df = await self.get_klines(
                 symbol=symbol,
                 interval=self.timeframe,
-                limit=100
+                limit=candle_limit
             )
 
             # ------ Validate response ------

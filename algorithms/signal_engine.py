@@ -96,10 +96,22 @@ except ImportError:
     print("[ENGINE] ⚠️ Candle brain not available")
 
 try:
+    from algorithms.vwap import vwap_analyzer
+    BRAIN_REGISTRY["VWAP"] = vwap_analyzer
+except ImportError:
+    print("[ENGINE] ⚠️ VWAP brain not available")
+    
+try:
     from algorithms.obv import obv_analyzer
     BRAIN_REGISTRY["OBV"] = obv_analyzer
 except ImportError:
-    print("[ENGINE] ⚠️ OBV brain not available")
+    print("[ENGINE] ⚠️ OBV brain not available")    
+
+try:
+    from algorithms.stochastic_rsi import stochrsi_analyzer
+    BRAIN_REGISTRY["STOCHASTIC_RSI"] = stochrsi_analyzer
+except ImportError:
+    print("[ENGINE] ⚠️ Stochastic RSI brain not available")
 
 # ============================================
 # DATA FETCHER
@@ -173,15 +185,45 @@ class SignalEngine:
     # BRAIN WEIGHTS (sum = 100)
     # ============================================
 
+    # ============================================
+    # BRAIN WEIGHTS (sum = 100)
+    # ============================================
+    # OBV + VOLUME overlap reduced from 23% to 17%
+    # Freed weight redistributed to EMA, Bollinger,
+    # S/R, and Candle Patterns.
+    #
+    # Old: OBV=13 + VOLUME=10 = 23% (overlap)
+    # New: OBV=10 + VOLUME=7  = 17% (balanced)
+    # ============================================
+
+    # ============================================
+    # BRAIN WEIGHTS (sum = 100)
+    # ============================================
+    # 10 brains total. Weights balanced by signal
+    # type to avoid overlap:
+    #
+    # TREND:      EMA(12) = 12%
+    # MOMENTUM:   RSI(10) + StochRSI(8) = 18%
+    # DIRECTION:  MACD(12) = 12%
+    # VOLATILITY: Bollinger(10) = 10%
+    # VOLUME:     OBV(8) + Volume(5) = 13%
+    # LEVELS:     S/R(10) = 10%
+    # SMART MONEY: VWAP(10) = 10%
+    # PATTERNS:   Candles(8) = 8%
+    # EARLY MOM:  StochRSI counted above
+    # ============================================
+
     DEFAULT_WEIGHTS = {
-        "RSI": 15,
-        "MACD": 15,
-        "EMA": 13,
-        "OBV": 13,
-        "BOLLINGER": 12,
-        "SUPPORT_RESISTANCE": 12,
-        "VOLUME": 10,
-        "CANDLE_PATTERNS": 10,
+        "RSI": 10,
+        "MACD": 12,
+        "EMA": 12,
+        "OBV": 8,
+        "BOLLINGER": 10,
+        "SUPPORT_RESISTANCE": 10,
+        "VOLUME": 5,
+        "CANDLE_PATTERNS": 8,
+        "VWAP": 10,
+        "STOCHASTIC_RSI": 8,
     }
 
     # Direction to numeric score mapping
@@ -540,13 +582,32 @@ class SignalEngine:
             # ============================================
             # STEP 3: Calculate Base Confidence
             # ============================================
+            # ============================================
+            # STEP 3: Calculate Base Confidence
+            # ============================================
+            # OLD formula: / 50 → score 70 = only 40% conf
+            # NEW formula: / 30 → score 70 = 67% conf
+            #
+            # Why 30? With 8 brains averaging, scores are
+            # compressed toward 50. Getting 70+ requires
+            # strong agreement. That SHOULD produce high
+            # confidence, not weak 40%.
+            #
+            # New mapping:
+            #   score 55 → 17% (barely directional)
+            #   score 60 → 33% (weak signal)
+            #   score 65 → 50% (moderate)
+            #   score 70 → 67% (moderate-strong)
+            #   score 75 → 83% (strong)
+            #   score 80 → 100% (capped at 95 later)
+            # ============================================
             if direction == "LONG":
                 base_confidence = min(
-                    ((weighted_score - 50) / 50) * 100, 100
+                    ((weighted_score - 50) / 30) * 100, 100
                 )
             elif direction == "SHORT":
                 base_confidence = min(
-                    ((50 - weighted_score) / 50) * 100, 100
+                    ((50 - weighted_score) / 30) * 100, 100
                 )
             else:
                 base_confidence = 0
@@ -589,70 +650,146 @@ class SignalEngine:
             # ============================================
             # STEP 5: Special Pattern Bonuses
             # ============================================
+            # FIXED: All bonuses now check direction
+            # agreement. A bearish divergence should NOT
+            # boost a LONG signal's confidence.
+            #
+            # Each bonus only fires when it AGREES with
+            # the signal direction determined in Step 2.
+            # ============================================
             special_bonus = 0
 
-            # RSI divergence bonus
+            # ── RSI divergence bonus ──
             rsi_data = brain_results.get("RSI", {})
             if rsi_data:
                 rsi_details = rsi_data.get("details", {})
                 if rsi_details.get("divergence"):
                     special_bonus += 5
-                    print("[ENGINE]   +5% RSI divergence bonus")
+                    print("[ENGINE]   +5% RSI divergence "
+                          "bonus")
 
-            # MACD crossover bonus
+            # ── MACD crossover bonus (C1 FIX) ──
+            # OLD: checked macd_data.get("signal") which
+            #      doesn't exist → never triggered
+            # NEW: checks details.crossover for actual
+            #      crossover type, and verifies direction
             macd_data = brain_results.get("MACD", {})
             if macd_data:
                 macd_details = macd_data.get("details", {})
-                macd_signal_str = macd_data.get("signal", "")
-                if ("crossover" in str(macd_signal_str).lower() or
-                        macd_details.get("crossover")):
-                    special_bonus += 5
-                    print("[ENGINE]   +5% MACD crossover bonus")
+                macd_cross = macd_details.get(
+                    "crossover", "NONE"
+                )
+                if macd_cross in (
+                    "BULLISH_CROSS", "BEARISH_CROSS"
+                ):
+                    # Only bonus if crossover agrees
+                    # with signal direction
+                    cross_agrees = (
+                        (direction == "LONG" and
+                         macd_cross == "BULLISH_CROSS")
+                        or
+                        (direction == "SHORT" and
+                         macd_cross == "BEARISH_CROSS")
+                    )
+                    if cross_agrees:
+                        special_bonus += 5
+                        print("[ENGINE]   +5% MACD {} "
+                              "bonus".format(macd_cross))
 
-            # Bollinger squeeze bonus
-            boll_data = brain_results.get("BOLLINGER", {})
+            # ── Bollinger squeeze bonus ──
+            boll_data = brain_results.get(
+                "BOLLINGER", {}
+            )
             if boll_data:
-                boll_details = boll_data.get("details", {})
-                if boll_details.get("squeeze") or \
-                        boll_details.get("squeeze_releasing"):
+                boll_details = boll_data.get(
+                    "details", {}
+                )
+                if boll_details.get("squeeze"):
                     special_bonus += 5
-                    print("[ENGINE]   +5% Bollinger squeeze bonus")
+                    print("[ENGINE]   +5% Bollinger "
+                          "squeeze bonus")
 
-            # Volume spike bonus
+            # ── Volume spike bonus (C2 FIX) ──
+            # OLD: checked vol_data.get("signal") which
+            #      doesn't exist → never triggered
+            # NEW: checks details.spike (True/False)
+            #      which is what the brain actually
+            #      returns
             vol_data = brain_results.get("VOLUME", {})
             if vol_data:
                 vol_details = vol_data.get("details", {})
-                vol_signal = vol_data.get("signal", "")
-                if ("spike" in str(vol_signal).lower() or
-                        vol_details.get("volume_spike")):
+                if vol_details.get("spike"):
                     special_bonus += 5
-                    print("[ENGINE]   +5% Volume spike bonus")
+                    print("[ENGINE]   +5% Volume spike "
+                          "bonus")
 
-            # OBV divergence bonus
+            # ── OBV divergence bonus (C3 FIX) ──
+            # OLD: checked if obv_data.get("divergence")
+            #      was truthy → added bonus regardless
+            #      of whether divergence agreed with
+            #      signal direction
+            # NEW: only adds bonus when divergence
+            #      direction matches signal direction
             obv_data = brain_results.get("OBV", {})
             if obv_data:
-                if obv_data.get("divergence"):
-                    special_bonus += 5
-                    print("[ENGINE]   +5% OBV divergence bonus")
+                obv_div = obv_data.get("divergence")
+                if obv_div:
+                    div_agrees = (
+                        (direction == "LONG" and
+                         obv_div == "BULLISH")
+                        or
+                        (direction == "SHORT" and
+                         obv_div == "BEARISH")
+                    )
+                    if div_agrees:
+                        special_bonus += 5
+                        print("[ENGINE]   +5% OBV {} "
+                              "divergence bonus".format(
+                                  obv_div
+                              ))
 
-            # Candlestick strong pattern bonus
-            candle_data = brain_results.get("CANDLE_PATTERNS", {})
+            # ── Strong candle pattern bonus ──
+            candle_data = brain_results.get(
+                "CANDLE_PATTERNS", {}
+            )
             if candle_data:
-                candle_details = candle_data.get("details", {})
+                candle_details = candle_data.get(
+                    "details", {}
+                )
                 strongest = candle_details.get(
                     "strongest_pattern", ""
                 )
-                if strongest in (
-                    "BULLISH_ENGULFING", "BEARISH_ENGULFING",
-                    "MORNING_STAR", "EVENING_STAR",
-                    "THREE_WHITE_SOLDIERS", "THREE_BLACK_CROWS"
-                ):
-                    special_bonus += 5
-                    print("[ENGINE]   +5% Strong candle "
-                          "pattern bonus")
+                strongest_signal = candle_details.get(
+                    "strongest_signal", ""
+                )
+
+                strong_patterns = (
+                    "BULLISH_ENGULFING",
+                    "BEARISH_ENGULFING",
+                    "MORNING_STAR",
+                    "EVENING_STAR",
+                    "THREE_WHITE_SOLDIERS",
+                    "THREE_BLACK_CROWS",
+                )
+
+                if strongest in strong_patterns:
+                    # Check if pattern agrees with
+                    # signal direction
+                    pattern_agrees = (
+                        (direction == "LONG" and
+                         strongest_signal == "LONG")
+                        or
+                        (direction == "SHORT" and
+                         strongest_signal == "SHORT")
+                    )
+                    if pattern_agrees:
+                        special_bonus += 5
+                        print("[ENGINE]   +5% Strong "
+                              "candle pattern bonus "
+                              "({})".format(strongest))
 
             confidence += special_bonus
-
+            
             # ============================================
             # STEP 6: Cap at 95% (never say 100%)
             # ============================================
@@ -738,31 +875,15 @@ class SignalEngine:
         Calculate entry, targets, and stop loss.
 
         Uses ATR for volatility-adjusted levels.
-        Checks S/R and Bollinger for smarter levels.
+        Checks Bollinger and S/R for smarter levels.
         Ensures minimum 1.5:1 risk/reward.
 
-        For LONG:
-          Entry = current price
-          Target 1 = entry + 1.5 × ATR
-          Target 2 = entry + 2.5 × ATR
-          Stop Loss = entry - 1.0 × ATR
-
-        For SHORT:
-          Entry = current price
-          Target 1 = entry - 1.5 × ATR
-          Target 2 = entry - 2.5 × ATR
-          Stop Loss = entry + 1.0 × ATR
-
-        Smarter levels from Bollinger/S&R override
-        if they provide better targets.
-
-        Args:
-            brain_results (dict): Brain outputs
-            direction (str):      LONG or SHORT
-            current_price (float): Latest close
-
-        Returns:
-            dict: {entry, target_1, target_2, stop_loss, rr}
+        FIXES APPLIED:
+        - B1: Bollinger band values are at TOP LEVEL
+              of brain result, not inside "details"
+        - B2: S/R levels are under "details.support_zones"
+              and "details.resistance_zones", and each
+              is a dict with "price" key, not a float
         """
         try:
             if current_price <= 0 or direction == "NEUTRAL":
@@ -771,12 +892,23 @@ class SignalEngine:
             # ------ Get ATR from Bollinger data ------
             atr = current_price * 0.015  # Default 1.5%
 
+            # ══════════════════════════════════════
+            # B1 FIX: Bollinger band values
+            # OLD: looked in details.upper_band (wrong)
+            # NEW: looks at TOP LEVEL of brain result
+            #      boll_data["upper_band"] etc.
+            # ══════════════════════════════════════
             boll_data = brain_results.get("BOLLINGER", {})
+            upper = 0
+            lower = 0
+            middle = 0
+
             if boll_data:
-                details = boll_data.get("details", {})
-                upper = details.get("upper_band", 0)
-                lower = details.get("lower_band", 0)
-                middle = details.get("middle_band", 0)
+                # Band values are at top level, NOT
+                # inside details
+                upper = boll_data.get("upper_band", 0)
+                lower = boll_data.get("lower_band", 0)
+                middle = boll_data.get("middle_band", 0)
 
                 if upper and lower and upper > lower:
                     bandwidth = upper - lower
@@ -798,13 +930,8 @@ class SignalEngine:
                 stop_loss = entry_price + (1.0 * atr)
 
             # ------ Smart levels from Bollinger ------
-            if boll_data:
-                details = boll_data.get("details", {})
-                upper = details.get("upper_band", 0)
-                lower = details.get("lower_band", 0)
-                middle = details.get("middle_band", 0)
-
-                if direction == "LONG" and upper and middle:
+            if upper and lower and middle:
+                if direction == "LONG":
                     if middle > entry_price:
                         target_1 = min(target_1, middle)
                     if upper > target_1:
@@ -815,7 +942,7 @@ class SignalEngine:
                         if better_stop > stop_loss:
                             stop_loss = better_stop
 
-                elif direction == "SHORT" and lower and middle:
+                elif direction == "SHORT":
                     if middle < entry_price:
                         target_1 = max(target_1, middle)
                     if lower < target_1:
@@ -826,46 +953,99 @@ class SignalEngine:
                         if better_stop < stop_loss:
                             stop_loss = better_stop
 
-            # ------ Smart levels from S/R ------
-            sr_data = brain_results.get("SUPPORT_RESISTANCE", {})
+            # ══════════════════════════════════════
+            # B2 FIX: S/R levels
+            # OLD: looked for details.support_levels
+            #      (wrong key) and treated items as
+            #      floats (they are dicts)
+            # NEW: looks for details.support_zones
+            #      and details.resistance_zones, and
+            #      extracts "price" from each dict
+            # ══════════════════════════════════════
+            sr_data = brain_results.get(
+                "SUPPORT_RESISTANCE", {}
+            )
             if sr_data:
-                details = sr_data.get("details", {})
-                supports = details.get("support_levels", [])
-                resistances = details.get("resistance_levels", [])
+                sr_details = sr_data.get("details", {})
+
+                # Extract float prices from zone dicts
+                support_zones = sr_details.get(
+                    "support_zones", []
+                )
+                resistance_zones = sr_details.get(
+                    "resistance_zones", []
+                )
+
+                # Convert dicts to float prices safely
+                supports = []
+                for zone in support_zones:
+                    if isinstance(zone, dict):
+                        p = zone.get("price", 0)
+                        if p and p > 0:
+                            supports.append(float(p))
+                    elif isinstance(zone, (int, float)):
+                        if zone > 0:
+                            supports.append(float(zone))
+
+                resistances = []
+                for zone in resistance_zones:
+                    if isinstance(zone, dict):
+                        p = zone.get("price", 0)
+                        if p and p > 0:
+                            resistances.append(float(p))
+                    elif isinstance(zone, (int, float)):
+                        if zone > 0:
+                            resistances.append(float(zone))
 
                 if direction == "LONG":
+                    # Use nearest resistance as target
                     if resistances:
-                        above = [r for r in resistances
-                                 if r > entry_price]
+                        above = [
+                            r for r in resistances
+                            if r > entry_price
+                        ]
                         if above:
                             nearest_r = min(above)
                             if nearest_r < target_2:
                                 target_2 = nearest_r
 
+                    # Use nearest support as stop loss
                     if supports:
-                        below = [s for s in supports
-                                 if s < entry_price]
+                        below = [
+                            s for s in supports
+                            if s < entry_price
+                        ]
                         if below:
                             nearest_s = max(below)
-                            better = nearest_s - (0.1 * atr)
+                            better = nearest_s - (
+                                0.1 * atr
+                            )
                             if better > stop_loss:
                                 stop_loss = better
 
                 elif direction == "SHORT":
+                    # Use nearest support as target
                     if supports:
-                        below = [s for s in supports
-                                 if s < entry_price]
+                        below = [
+                            s for s in supports
+                            if s < entry_price
+                        ]
                         if below:
                             nearest_s = max(below)
                             if nearest_s > target_2:
                                 target_2 = nearest_s
 
+                    # Use nearest resistance as stop
                     if resistances:
-                        above = [r for r in resistances
-                                 if r > entry_price]
+                        above = [
+                            r for r in resistances
+                            if r > entry_price
+                        ]
                         if above:
                             nearest_r = min(above)
-                            better = nearest_r + (0.1 * atr)
+                            better = nearest_r + (
+                                0.1 * atr
+                            )
                             if better < stop_loss:
                                 stop_loss = better
 
@@ -888,9 +1068,13 @@ class SignalEngine:
 
             # Ensure target_2 is beyond target_1
             if direction == "LONG":
-                target_2 = max(target_2, target_1 + atr)
+                target_2 = max(
+                    target_2, target_1 + atr
+                )
             else:
-                target_2 = min(target_2, target_1 - atr)
+                target_2 = min(
+                    target_2, target_1 - atr
+                )
 
             # ------ Round prices ------
             dec = self._get_decimals(entry_price)
@@ -904,8 +1088,10 @@ class SignalEngine:
             }
 
         except Exception as e:
-            print("[ENGINE] ❌ Trade levels error: {}".format(e))
+            print("[ENGINE] ❌ Trade levels error: "
+                  "{}".format(e))
             return self._default_levels(current_price)
+        
 
     def _default_levels(self, price=0):
         """Return empty trade levels."""
@@ -957,10 +1143,15 @@ class SignalEngine:
             if data_fetcher:
                 try:
                     symbol = pair.replace("/", "")
+                    try:
+                        candle_limit = Config.CANDLE_LIMIT
+                    except AttributeError:
+                        candle_limit = 250
+
                     df = await data_fetcher.get_klines(
                         symbol=symbol,
                         interval="5m",
-                        limit=100,
+                        limit=candle_limit,
                     )
                 except Exception as e:
                     print("[ENGINE]   ❌ Data fetch error "
@@ -1019,7 +1210,7 @@ class SignalEngine:
         Pipeline:
         ┌───────────────────────────────────────┐
         │ 1. Scan ALL 10 pairs                  │
-        │ 2. Run 8 brains on EACH               │
+        │ 2. Run 10 brains on EACH               │
         │ 3. Get confidence for each pair        │
         │ 4. RANK all pairs by confidence        │
         │ 5. Pick #1 best pair                   │

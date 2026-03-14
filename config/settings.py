@@ -78,7 +78,7 @@ class Config:
         os.getenv("PUBLIC_CHANNEL_DAILY_LIMIT", "2")
     )
     SIGNAL_INTERVAL_MINUTES = int(
-        os.getenv("SIGNAL_INTERVAL_MINUTES", "10")
+        os.getenv("SIGNAL_INTERVAL_MINUTES", "25")
     )
     MIN_CONFIDENCE_SCORE = int(
         os.getenv("MIN_CONFIDENCE_SCORE", "65")
@@ -90,6 +90,22 @@ class Config:
     # ═══════════════════════════════════
 
     TIMEFRAME = os.getenv("TIMEFRAME", "5m")
+    
+    CANDLE_LIMIT = int(os.getenv("CANDLE_LIMIT", "250"))
+
+    # ═══════════════════════════════════
+    #  STOCHASTIC RSI BRAIN
+    # ═══════════════════════════════════
+
+    STOCHRSI_K_PERIOD = int(
+        os.getenv("STOCHRSI_K_PERIOD", "3")
+    )
+    STOCHRSI_D_PERIOD = int(
+        os.getenv("STOCHRSI_D_PERIOD", "3")
+    )
+    STOCHRSI_PERIOD = int(
+        os.getenv("STOCHRSI_PERIOD", "14")
+    )
 
     TRADING_PAIRS = [
         "BTC/USDT",

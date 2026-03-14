@@ -639,7 +639,7 @@ class CryptoSignalBot:
                 "\n"
                 "📊 AI-powered crypto trading signals\n"
                 "🎯 65%+ confidence signals only\n"
-                "⏰ Real-time analysis every 10 minutes\n"
+                "⏰ Real-time analysis every 25 minutes\n"
                 "\n"
                 "💎 <b>Premium Access: ₹{price} "
                 "for {days} days</b>\n"
@@ -884,7 +884,7 @@ class CryptoSignalBot:
             "• 🛑 Stop loss\n"
             "\n"
             "━━━ <b>AI Analysis</b> ━━━\n"
-            "Our bot uses <b>8 AI brains</b>:\n"
+            "Our bot uses <b>10 AI brains</b>:\n"
             "• RSI — Momentum\n"
             "• MACD — Trend direction\n"
             "• Bollinger Bands — Volatility\n"
@@ -893,10 +893,13 @@ class CryptoSignalBot:
             "• Support/Resistance — Key levels\n"
             "• Candlestick Patterns — Price action\n"
             "• OBV — Money flow\n"
+            "• VWAP — Smart money levels\n"
+            "• Stochastic RSI — Early momentum\n"
+            
             "\n"
             "━━━ <b>FAQ</b> ━━━\n"
             "<b>Q: How often are signals sent?</b>\n"
-            "A: Every 10 minutes when opportunities "
+            "A: Every 25 minutes when opportunities "
             "arise (65%+ confidence)\n"
             "\n"
             "<b>Q: Which pairs are tracked?</b>\n"
@@ -1511,360 +1514,17 @@ class CryptoSignalBot:
     # FUNCTION 10: SIGNAL FORMATTING
     # ============================================
 
-    def format_signal_message(self, signal_data):
-        """
-        Format a trading signal into a beautiful
-        Telegram message using HTML.
-
-        Signal data expected format:
-        {
-            "pair": "BTC/USDT",
-            "direction": "LONG",
-            "confidence": 78.5,
-            "entry_price": 67500.0,
-            "target_price": 69000.0,
-            "stop_loss": 66500.0,
-            "timeframe": "5m",
-            "brains": {...},
-            "timestamp": "2024-01-15 10:30:00"
-        }
-
-        Args:
-            signal_data (dict): Signal information
-
-        Returns:
-            str: Formatted HTML message
-        """
-        try:
-            pair = signal_data.get("pair", "???/USDT")
-            direction = signal_data.get("direction", "NEUTRAL")
-            confidence = signal_data.get("confidence", 0)
-            entry = signal_data.get("entry_price", 0)
-            target = signal_data.get("target_price", 0)
-            stop = signal_data.get("stop_loss", 0)
-            timeframe = signal_data.get("timeframe", "5m")
-            timestamp = signal_data.get(
-                "timestamp",
-                datetime.now().strftime("%Y-%m-%d %H:%M UTC")
-            )
-
-            # Direction emoji and text
-            if direction == "LONG":
-                dir_emoji = "📈"
-                dir_text = "LONG ✅"
-                dir_color = "🟢"
-            elif direction == "SHORT":
-                dir_emoji = "📉"
-                dir_text = "SHORT 🔻"
-                dir_color = "🔴"
-            else:
-                dir_emoji = "⏸"
-                dir_text = "NEUTRAL"
-                dir_color = "⚪"
-
-            # Calculate percentages
-            if entry and entry > 0:
-                if target:
-                    target_pct = ((target - entry) / entry) * 100
-                    target_pct_str = "{:+.2f}%".format(target_pct)
-                else:
-                    target_pct_str = "N/A"
-
-                if stop:
-                    stop_pct = ((stop - entry) / entry) * 100
-                    stop_pct_str = "{:+.2f}%".format(stop_pct)
-                else:
-                    stop_pct_str = "N/A"
-            else:
-                target_pct_str = "N/A"
-                stop_pct_str = "N/A"
-
-            # Format prices
-            if entry >= 1000:
-                entry_str = "${:,.2f}".format(entry)
-                target_str = "${:,.2f}".format(target) if target else "N/A"
-                stop_str = "${:,.2f}".format(stop) if stop else "N/A"
-            elif entry >= 1:
-                entry_str = "${:.4f}".format(entry)
-                target_str = "${:.4f}".format(target) if target else "N/A"
-                stop_str = "${:.4f}".format(stop) if stop else "N/A"
-            else:
-                entry_str = "${:.6f}".format(entry)
-                target_str = "${:.6f}".format(target) if target else "N/A"
-                stop_str = "${:.6f}".format(stop) if stop else "N/A"
-
-            # Brain analysis section
-            brains = signal_data.get("brains", {})
-            brain_lines = []
-
-            brain_order = [
-                ("RSI", "RSI"),
-                ("MACD", "MACD"),
-                ("BOLLINGER", "Bollinger"),
-                ("VOLUME", "Volume"),
-                ("EMA", "EMA"),
-                ("SUPPORT_RESISTANCE", "S/R"),
-                ("CANDLE_PATTERNS", "Candles"),
-                ("OBV", "OBV"),
-            ]
-
-            for brain_key, brain_name in brain_order:
-                brain_data = brains.get(brain_key, {})
-                if brain_data:
-                    b_dir = brain_data.get("direction", "?")
-                    b_conf = brain_data.get("confidence", 0)
-
-                    if b_dir == "LONG":
-                        b_emoji = "🟢"
-                    elif b_dir == "SHORT":
-                        b_emoji = "🔴"
-                    else:
-                        b_emoji = "⚪"
-
-                    brain_lines.append(
-                        "  {} {} — {} ({}%)".format(
-                            b_emoji, brain_name, b_dir, b_conf
-                        )
-                    )
-
-            if brain_lines:
-                brain_section = "\n".join(brain_lines)
-            else:
-                brain_section = "  (analysis details not available)"
-
-            # Confidence bar
-            filled = int(confidence / 10)
-            empty = 10 - filled
-            conf_bar = "█" * filled + "░" * empty
-
-            # Build message
-            msg = (
-                "{dir_color}  <b>CRYPTO SIGNAL ALERT</b>  {dir_color}\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "\n"
-                "🔷 Pair: <b>{pair}</b>\n"
-                "{dir_emoji} Direction: <b>{dir_text}</b>\n"
-                "🎯 Confidence: <b>{conf:.1f}%</b>\n"
-                "   [{conf_bar}]\n"
-                "\n"
-                "━━━ Trade Setup ━━━\n"
-                "💰 Entry:  <code>{entry}</code>\n"
-                "🎯 Target: <code>{target}</code> "
-                "({target_pct})\n"
-                "🛑 Stop:   <code>{stop}</code> "
-                "({stop_pct})\n"
-                "\n"
-                "━━━ AI Brain Analysis ━━━\n"
-                "{brains}\n"
-                "\n"
-                "⏰ {time} | 📊 {tf}\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "⚠️ <i>Not financial advice. "
-                "Trade at your own risk.</i>"
-            ).format(
-                dir_color=dir_color,
-                pair=pair,
-                dir_emoji=dir_emoji,
-                dir_text=dir_text,
-                conf=confidence,
-                conf_bar=conf_bar,
-                entry=entry_str,
-                target=target_str,
-                target_pct=target_pct_str,
-                stop=stop_str,
-                stop_pct=stop_pct_str,
-                brains=brain_section,
-                time=timestamp,
-                tf=timeframe,
-            )
-
-            return msg
-
-        except Exception as e:
-            print("[BOT] ❌ Format signal error: {}".format(e))
-            return (
-                "📊 <b>Signal Alert</b>\n\n"
-                "Pair: {}\n"
-                "Direction: {}\n"
-                "Confidence: {}%\n"
-                "\n"
-                "(Full details unavailable)"
-            ).format(
-                signal_data.get("pair", "?"),
-                signal_data.get("direction", "?"),
-                signal_data.get("confidence", 0),
-            )
-
     # ============================================
     # FUNCTION 11: SEND SIGNAL TO USER
     # ============================================
-
-    async def send_signal_to_user(self, chat_id, signal_data):
-        """
-        Send a trading signal to a single user.
-
-        Args:
-            chat_id (int):        Target user's chat ID
-            signal_data (dict):   Signal information
-
-        Returns:
-            bool: True if sent successfully
-        """
-        try:
-            if not self.application or not self.application.bot:
-                print("[BOT] ❌ Application not ready")
-                return False
-
-            message = self.format_signal_message(signal_data)
-
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode=ParseMode.HTML,
-            )
-
-            await self._db_increment_signal_count(chat_id)
-
-            print("[BOT] 📨 Signal sent to {}".format(chat_id))
-            return True
-
-        except Exception as e:
-            print("[BOT] ❌ Send to user {} error: {}".format(
-                chat_id, e
-            ))
-            return False
 
     # ============================================
     # FUNCTION 12: BROADCAST TO SUBSCRIBERS
     # ============================================
 
-    async def broadcast_signal(self, signal_data):
-        """
-        Send a signal to ALL active subscribers.
-
-        Gets list of active subscribers from database,
-        sends signal to each. Handles blocked/deleted
-        users gracefully.
-
-        Args:
-            signal_data (dict): Signal information
-
-        Returns:
-            dict: {"sent": int, "failed": int, "total": int}
-        """
-        sent = 0
-        failed_count = 0
-
-        try:
-            subscribers = await self._db_get_active_subscribers()
-            total = len(subscribers)
-
-            if total == 0:
-                print("[BOT] No active subscribers")
-                return {"sent": 0, "failed": 0, "total": 0}
-
-            print("[BOT] 📡 Broadcasting signal to {} "
-                  "subscribers...".format(total))
-
-            message = self.format_signal_message(signal_data)
-
-            for chat_id in subscribers:
-                try:
-                    await self.application.bot.send_message(
-                        chat_id=chat_id,
-                        text=message,
-                        parse_mode=ParseMode.HTML,
-                    )
-                    await self._db_increment_signal_count(chat_id)
-                    sent += 1
-
-                    # Small delay to avoid rate limiting
-                    await asyncio.sleep(0.05)
-
-                except Exception as e:
-                    failed_count += 1
-                    print("[BOT] ⚠️ Failed to send to {}: {}".format(
-                        chat_id, e
-                    ))
-
-            print("[BOT] 📡 Broadcast complete: {}/{} sent, "
-                  "{} failed".format(sent, total, failed_count))
-
-            return {
-                "sent": sent,
-                "failed": failed_count,
-                "total": total,
-            }
-
-        except Exception as e:
-            print("[BOT] ❌ Broadcast error: {}".format(e))
-            return {
-                "sent": sent,
-                "failed": failed_count,
-                "total": 0,
-            }
-
     # ============================================
     # FUNCTION 13: SEND TO PUBLIC CHANNEL
     # ============================================
-
-    async def send_to_channel(self, signal_data):
-        """
-        Post a signal to the public Telegram channel.
-
-        Uses TELEGRAM_PUBLIC_CHANNEL_ID from config.
-        Skips if channel ID is not set.
-
-        Public channel signals include a subscription
-        call-to-action at the bottom.
-
-        Args:
-            signal_data (dict): Signal information
-
-        Returns:
-            bool: True if sent, False if skipped/error
-        """
-        try:
-            if not self.channel_id:
-                print("[BOT] ⚠️ No channel ID configured, "
-                      "skipping channel post")
-                return False
-
-            if not self.application or not self.application.bot:
-                print("[BOT] ❌ Application not ready")
-                return False
-
-            message = self.format_signal_message(signal_data)
-
-            # Add channel CTA footer
-            channel_footer = (
-                "\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "🤖 <b>Want all signals?</b>\n"
-                "💎 Premium: ₹{price}/{days} days\n"
-                "👉 DM @{bot} to subscribe!"
-            ).format(
-                price=Config.SUBSCRIPTION_PRICE,
-                days=Config.SUBSCRIPTION_DAYS,
-                bot=self.application.bot.username
-                    if self.application.bot.username
-                    else "CryptoSignalBot",
-            )
-
-            full_message = message + channel_footer
-
-            await self.application.bot.send_message(
-                chat_id=self.channel_id,
-                text=full_message,
-                parse_mode=ParseMode.HTML,
-            )
-
-            print("[BOT] 📢 Signal posted to channel")
-            return True
-
-        except Exception as e:
-            print("[BOT] ❌ Channel post error: {}".format(e))
-            return False
 
     # ============================================
     # FUNCTION 14: ERROR HANDLER

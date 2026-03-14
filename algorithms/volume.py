@@ -1008,15 +1008,14 @@ class VolumeAnalyzer:
 
             # ------ LONG factors (add to score) ------
 
-            # Volume above avg + price rising: +15
-            if volume_above_avg and price_rising:
-                score += 15.0
-                print("[VOLUME] 📈 +15 pts | Volume above avg + price rising")
-
-            # Volume spike + price rising: +20
+            # Volume spike OR above avg + price rising
+            # (mutually exclusive — spike includes above avg)
             if is_spike and price_rising:
                 score += 20.0
                 print("[VOLUME] 📈 +20 pts | Volume SPIKE + price rising")
+            elif volume_above_avg and price_rising:
+                score += 15.0
+                print("[VOLUME] 📈 +15 pts | Volume above avg + price rising")
 
             # OBV rising: +10
             if obv_trend == "RISING":
@@ -1041,15 +1040,14 @@ class VolumeAnalyzer:
 
             # ------ SHORT factors (subtract from score) ------
 
-            # Volume above avg + price falling: -15
-            if volume_above_avg and price_falling:
-                score -= 15.0
-                print("[VOLUME] 📉 -15 pts | Volume above avg + price falling")
-
-            # Volume spike + price falling: -20
+            # Volume spike OR above avg + price falling
+            # (mutually exclusive — spike includes above avg)
             if is_spike and price_falling:
                 score -= 20.0
                 print("[VOLUME] 📉 -20 pts | Volume SPIKE + price falling")
+            elif volume_above_avg and price_falling:
+                score -= 15.0
+                print("[VOLUME] 📉 -15 pts | Volume above avg + price falling")
 
             # OBV falling: -10
             if obv_trend == "FALLING":

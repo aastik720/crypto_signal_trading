@@ -150,59 +150,13 @@ print("\n[MAIN] Module loading complete\n")
 
 
 # ============================================
-# HELPER: Safely resolve coroutines
-# ============================================
-
-async def safe_resolve(value):
-    """
-    If value is a coroutine, await it.
-    Otherwise return as-is.
-
-    This prevents 'coroutine has no len()' errors
-    when an async function is accidentally called
-    without await somewhere in a sub-module.
-
-    Args:
-        value: Any value or coroutine
-
-    Returns:
-        The resolved value (awaited if needed)
-    """
-    if asyncio.iscoroutine(value):
-        return await value
-    if asyncio.isfuture(value):
-        return await value
-    return value
-
-
-# ============================================
 # MAIN ORCHESTRATOR CLASS
 # ============================================
 
 class CryptoSignalBotMaster:
     """
     Main bot orchestrator.
-
-    Controls the entire lifecycle:
-    - Module health checks
-    - Async initialization (DB, fetcher, Bot)
-    - Starts background workers
-    - Signal generation cycles
-    - Graceful shutdown
-
-    Connected modules:
-    ┌─────────────────────────────────────────┐
-    │  Config         → settings for all      │
-    │  Database       → storage               │
-    │  Fetcher        → Binance price data    │
-    │  SignalEngine   → 8-brain analysis      │
-    │  SignalSender   → distribute signals    │
-    │  AuthManager    → tokens & security     │
-    │  PaymentManager → Razorpay / fake mode  │
-    │  TelegramBot    → user commands         │
-    │  Reminders      → expiry warnings       │
-    │  Logger         → logging & tracking    │
-    └─────────────────────────────────────────┘
+    Controls the entire lifecycle.
     """
 
     def __init__(self):
@@ -212,7 +166,11 @@ class CryptoSignalBotMaster:
         self.start_time = None
         self._ws_task = None
         self._workers = []
-        self.app = None  # Telegram Application
+        self.app = None
+
+        # No-trade message throttle
+        self._last_no_trade_sent = None
+        self._no_trade_interval = 7200  # 2 hours
 
         print("[MAIN] Bot orchestrator created")
 
@@ -223,18 +181,11 @@ class CryptoSignalBotMaster:
     def check_modules(self):
         """
         Verifies all modules loaded successfully.
-
-        Critical modules must ALL pass.
-        Optional modules log warnings but don't block.
-
-        Returns:
-            bool: True if all critical modules loaded
         """
         print("\n[MAIN] ── Module Health Check ──\n")
 
         critical_ok = True
 
-        # Critical — bot cannot run without these
         critical_modules = [
             ("Config", CONFIG_LOADED),
             ("Database", DATABASE_LOADED),
@@ -253,7 +204,6 @@ class CryptoSignalBotMaster:
                       "(CRITICAL)".format(name))
                 critical_ok = False
 
-        # Optional — bot can run without these
         optional_modules = [
             ("Payment System", PAYMENT_LOADED),
             ("Reminders", REMINDERS_LOADED),
@@ -274,6 +224,7 @@ class CryptoSignalBotMaster:
                   "FAILED ──\n")
 
         return critical_ok
+
     # ============================================
     # ASYNC INITIALIZATION
     # ============================================
@@ -281,22 +232,10 @@ class CryptoSignalBotMaster:
     async def initialize(self):
         """
         Initialize all async components.
-
-        Steps:
-        1. Create database tables
-        2. Test Binance API connection
-        3. Build Telegram bot application
-        4. Link all sub-systems together
-        5. Display configuration summary
-
-        Returns:
-            bool: True if initialization succeeded
         """
         print("[MAIN] ── Initializing Components ──\n")
 
-        # ────────────────────────────────
         # Step 1: Database
-        # ────────────────────────────────
         print("[MAIN] Step 1/5: Creating database tables...")
         try:
             tables_ok = await db.create_tables()
@@ -310,9 +249,7 @@ class CryptoSignalBotMaster:
                   "{}\n".format(e))
             return False
 
-        # ────────────────────────────────
         # Step 2: Binance API
-        # ────────────────────────────────
         print("[MAIN] Step 2/5: Testing Binance API...")
         try:
             test_price = await fetcher.get_current_price(
@@ -328,9 +265,7 @@ class CryptoSignalBotMaster:
             print("[MAIN]   ⚠️ Binance test failed: "
                   "{}\n".format(e))
 
-        # ────────────────────────────────
         # Step 3: Build Telegram Application
-        # ────────────────────────────────
         print("[MAIN] Step 3/5: Building Telegram bot...")
         try:
             self.app = crypto_bot.build_application()
@@ -340,13 +275,10 @@ class CryptoSignalBotMaster:
                   "{}\n".format(e))
             return False
 
-        # ────────────────────────────────
         # Step 4: Link all sub-systems
-        # ────────────────────────────────
         print("[MAIN] Step 4/5: Linking sub-systems...")
 
         try:
-            # Signal Sender needs bot to send messages
             signal_sender.set_bot(crypto_bot)
             print("[MAIN]   ✅ Signal Sender ← Bot linked")
         except Exception as e:
@@ -354,7 +286,6 @@ class CryptoSignalBotMaster:
                   "{}".format(e))
             return False
 
-        # Reminders need bot to send warnings
         if REMINDERS_LOADED and reminder_manager:
             try:
                 reminder_manager.set_bot(crypto_bot)
@@ -363,7 +294,6 @@ class CryptoSignalBotMaster:
                 print("[MAIN]   ⚠️ Reminders link failed: "
                       "{}".format(e))
 
-        # Payment Manager — already initialized as singleton
         if PAYMENT_LOADED and payment_manager:
             print("[MAIN]   ✅ Payment Manager ready "
                   "({})".format(
@@ -371,7 +301,6 @@ class CryptoSignalBotMaster:
                       else "Fake mode"
                   ))
 
-        # Auth Manager — load existing subscriptions from DB
         if AUTH_LOADED and auth_manager:
             try:
                 active_users = await db.get_all_active_users()
@@ -430,9 +359,7 @@ class CryptoSignalBotMaster:
 
         print("")
 
-        # ────────────────────────────────
         # Step 5: Configuration summary
-        # ────────────────────────────────
         print("[MAIN] Step 5/5: Configuration")
         print("[MAIN]   Payment Mode    : {}".format(
             Config.PAYMENT_MODE.upper()
@@ -466,7 +393,6 @@ class CryptoSignalBotMaster:
             bot_logger.log_startup()
 
         return True
-
     # ============================================
     # BACKGROUND WORKERS
     # ============================================
@@ -474,9 +400,6 @@ class CryptoSignalBotMaster:
     async def _reminder_worker(self):
         """
         Runs the reminder check every 6 hours.
-
-        Sends expiry warnings to users whose
-        subscription expires within 3 days.
         """
         print("[MAIN] ⏰ Reminder worker started "
               "(every 6 hours)")
@@ -486,7 +409,6 @@ class CryptoSignalBotMaster:
                 if reminder_manager:
                     await reminder_manager.process_all_reminders()
 
-                # Also send expiry warnings via signal sender
                 if signal_sender:
                     try:
                         await signal_sender.send_expiry_warnings(
@@ -503,7 +425,6 @@ class CryptoSignalBotMaster:
                     print("[WORKER] ❌ Reminder error: "
                           "{}".format(e))
 
-            # Sleep 6 hours in small chunks
             for _ in range(6 * 3600):
                 if not self.is_running:
                     break
@@ -512,9 +433,6 @@ class CryptoSignalBotMaster:
     async def _auth_expiry_worker(self):
         """
         Runs the auth expiry check every hour.
-
-        Finds and deactivates expired subscriptions.
-        Sends expiry notification to affected users.
         """
         print("[MAIN] 🔒 Auth expiry worker started "
               "(every 1 hour)")
@@ -536,7 +454,6 @@ class CryptoSignalBotMaster:
                                 "AUTH",
                             )
 
-                        # Notify expired users
                         if signal_sender:
                             for chat_id in expired:
                                 try:
@@ -570,26 +487,19 @@ class CryptoSignalBotMaster:
                     print("[WORKER] ❌ Auth expiry error: "
                           "{}".format(e))
 
-            # Sleep 1 hour in small chunks
             for _ in range(3600):
                 if not self.is_running:
                     break
                 await asyncio.sleep(1)
 
     # ============================================
-    # SIGNAL GENERATION CYCLE (The 10-Min Loop)
+    # SIGNAL GENERATION CYCLE
     # ============================================
 
     async def run_signal_cycle(self):
         """
         Runs ONE complete signal generation cycle.
-
-        Pipeline:
-        1. SignalEngine scans all pairs, picks #1 best
-        2. Log signal to database
-        3. Distribute via SignalSender (public + private)
-        4. Update database with send status
-        5. If no signal → send "no trade" to subscribers
+        Called by run() every N minutes.
         """
         self.cycle_count += 1
         cycle_start = time.time()
@@ -602,7 +512,6 @@ class CryptoSignalBotMaster:
         print("─" * 55)
 
         try:
-            # ── 1. Scan all pairs and pick best ──
             scan_result = await signal_engine.scan_and_pick_best()
 
             if (scan_result["has_signal"] and
@@ -610,7 +519,7 @@ class CryptoSignalBotMaster:
 
                 best_sig = scan_result["best_signal"]
 
-                # ── 2. Log signal to database ──
+                # Log to database
                 sig_id = None
                 try:
                     sig_id = await db.log_signal(
@@ -629,11 +538,14 @@ class CryptoSignalBotMaster:
                     print("[CYCLE] ⚠️ DB log error: "
                           "{}".format(e))
 
-                # ── 3. Distribute signal ──
-                dist_result = await signal_sender \
-                    .distribute_signal(best_sig)
+                # Distribute signal
+                dist_result = (
+                    await signal_sender.distribute_signal(
+                        best_sig
+                    )
+                )
 
-                # ── 4. Update DB with send status ──
+                # Update DB status
                 if sig_id:
                     try:
                         await db.update_signal_sent_status(
@@ -648,46 +560,103 @@ class CryptoSignalBotMaster:
                             ),
                         )
                     except Exception as e:
-                        print("[CYCLE] ⚠️ DB update error: "
-                              "{}".format(e))
+                        print("[CYCLE] ⚠️ DB update "
+                              "error: {}".format(e))
 
                 self.signals_generated += 1
+                self._last_no_trade_sent = None
+
+                print("[CYCLE] ✅ Signal distributed "
+                      "successfully")
 
             else:
-                # ── 5. No signal — send honest message ──
+                # ══════════════════════════════════
+                # NO SIGNAL — Smart messaging
+                # Only send every 2 hours max
+                # ══════════════════════════════════
                 no_trade_msg = scan_result.get(
                     "no_trade_message"
                 )
 
                 if no_trade_msg and signal_sender:
-                    # FIX: await the async call and
-                    # use safe_resolve as safety net
-                    active_subs = await safe_resolve(
-                        await signal_sender._get_active_subscribers()
-                    )
+                    now = datetime.now()
+                    should_send = False
 
-                    # Ensure we got a list, not None
-                    if not active_subs:
-                        active_subs = []
-
-                    if len(active_subs) > 0:
-                        print("[MAIN] 📡 Sending 'No Trade' "
-                              "to {} subscriber(s)".format(
-                                  len(active_subs)
-                              ))
-
-                        for cid in active_subs:
-                            try:
-                                await signal_sender \
-                                    .send_custom_message(
-                                        cid, no_trade_msg
-                                    )
-                                await asyncio.sleep(0.05)
-                            except Exception:
-                                pass
+                    if self._last_no_trade_sent is None:
+                        should_send = True
+                        print("[CYCLE] 📤 First no-trade "
+                              "message (timer was reset)")
                     else:
-                        print("[CYCLE] ℹ️ No active "
-                              "subscribers to notify")
+                        elapsed = (
+                            now - self._last_no_trade_sent
+                        ).total_seconds()
+
+                        if elapsed >= self._no_trade_interval:
+                            should_send = True
+                            print("[CYCLE] 📤 2 hours passed "
+                                  "— sending no-trade update")
+                        else:
+                            remaining = (
+                                self._no_trade_interval
+                                - elapsed
+                            )
+                            remaining_min = remaining / 60.0
+                            print("[CYCLE] ⏸️ No-trade "
+                                  "suppressed (next in "
+                                  "{:.0f} min)".format(
+                                      remaining_min
+                                  ))
+
+                    if should_send:
+                        try:
+                            active_subs = (
+                                await signal_sender
+                                ._get_active_subscribers()
+                            )
+                        except Exception as e:
+                            print("[CYCLE] ⚠️ Get subs "
+                                  "error: {}".format(e))
+                            active_subs = []
+
+                        if not active_subs:
+                            active_subs = []
+
+                        if len(active_subs) > 0:
+                            sent_count = 0
+                            fail_count = 0
+
+                            for cid in active_subs:
+                                try:
+                                    await signal_sender \
+                                        .send_custom_message(
+                                            cid,
+                                            no_trade_msg,
+                                        )
+                                    sent_count += 1
+                                    await asyncio.sleep(0.05)
+                                except Exception:
+                                    fail_count += 1
+
+                            self._last_no_trade_sent = now
+
+                            print("[CYCLE] 📤 No-trade sent "
+                                  "to {}/{} subscribers"
+                                  .format(
+                                      sent_count,
+                                      len(active_subs),
+                                  ))
+
+                            if fail_count > 0:
+                                print("[CYCLE] ⚠️ {} sends "
+                                      "failed".format(
+                                          fail_count
+                                      ))
+                        else:
+                            print("[CYCLE] ℹ️ No active "
+                                  "subscribers to notify")
+                else:
+                    print("[CYCLE] ℹ️ No scan message "
+                          "available")
 
         except Exception as e:
             print("[CYCLE] ❌ Critical cycle error: "
@@ -715,9 +684,6 @@ class CryptoSignalBotMaster:
     async def on_candle_close(self, candle_data):
         """
         Callback when a WebSocket candle closes.
-
-        Currently just logs. Can be extended to
-        trigger real-time analysis.
         """
         symbol = candle_data.get("symbol", "UNKNOWN")
         close_price = candle_data.get("close", 0)
@@ -731,21 +697,12 @@ class CryptoSignalBotMaster:
     async def run(self):
         """
         Main execution loop.
-
-        Sequence:
-        1. Check all modules are healthy
-        2. Initialize async components
-        3. Start Telegram bot polling
-        4. Start WebSocket streaming
-        5. Start background workers
-        6. Run signal cycles every 10 minutes
-        7. On shutdown → graceful cleanup
+        Starts all services then loops signal cycles.
         """
         print("\n" + "★" * 55)
         print("  CRYPTO SIGNAL BOT — LAUNCHING")
         print("★" * 55 + "\n")
 
-        # ── Pre-flight checks ──
         if not self.check_modules():
             print("[MAIN] ❌ Critical modules missing "
                   "— cannot start")
@@ -797,7 +754,9 @@ class CryptoSignalBotMaster:
         # ────────────────────────────────
         if REMINDERS_LOADED and reminder_manager:
             self._workers.append(
-                asyncio.create_task(self._reminder_worker())
+                asyncio.create_task(
+                    self._reminder_worker()
+                )
             )
 
         if AUTH_LOADED and auth_manager:
@@ -810,9 +769,8 @@ class CryptoSignalBotMaster:
         print("")
         print("[MAIN] " + "━" * 48)
         print("[MAIN]  🚀 BOT IS NOW RUNNING 24/7")
-        print("[MAIN]  Signal cycle every {} minutes".format(
-            Config.SIGNAL_INTERVAL_MINUTES
-        ))
+        print("[MAIN]  Signal cycle every {} minutes"
+              .format(Config.SIGNAL_INTERVAL_MINUTES))
         print("[MAIN]  Payment mode: {}".format(
             Config.PAYMENT_MODE.upper()
         ))
@@ -823,15 +781,8 @@ class CryptoSignalBotMaster:
         # ────────────────────────────────
         # 4. Signal Loop (Every N minutes)
         # ────────────────────────────────
-        # FIX: Previously this called
-        #   signal_sender._get_active_subscribers()
-        # instead of self.run_signal_cycle().
-        # Now correctly runs the full signal pipeline.
-        # ────────────────────────────────
         try:
             while self.is_running:
-
-                # ── Run one full signal cycle ──
                 try:
                     await self.run_signal_cycle()
                 except Exception as e:
@@ -843,22 +794,25 @@ class CryptoSignalBotMaster:
                             tb_info=True
                         )
 
-                # ── Sleep until next cycle ──
                 if self.is_running:
                     wait_seconds = (
-                        Config.SIGNAL_INTERVAL_MINUTES * 60
+                        Config.SIGNAL_INTERVAL_MINUTES
+                        * 60
                     )
-                    next_time = datetime.now() + timedelta(
-                        seconds=wait_seconds
+                    next_time = (
+                        datetime.now()
+                        + timedelta(
+                            seconds=wait_seconds
+                        )
                     )
                     print("[MAIN] ⏳ Next cycle in {} min "
                           "(at {})\n".format(
                               Config.SIGNAL_INTERVAL_MINUTES,
-                              next_time.strftime("%H:%M:%S"),
+                              next_time.strftime(
+                                  "%H:%M:%S"
+                              ),
                           ))
 
-                    # Sleep in 1-second chunks for
-                    # responsive shutdown
                     for _ in range(wait_seconds):
                         if not self.is_running:
                             break
@@ -878,13 +832,6 @@ class CryptoSignalBotMaster:
     async def shutdown(self):
         """
         Gracefully shuts down all components.
-
-        Order matters:
-        1. Stop accepting new commands (Telegram)
-        2. Stop background workers
-        3. Stop WebSocket
-        4. Close HTTP connections
-        5. Print final statistics
         """
         print("\n" + "=" * 55)
         print("  SHUTTING DOWN CRYPTO SIGNAL BOT")
@@ -892,7 +839,7 @@ class CryptoSignalBotMaster:
 
         self.is_running = False
 
-        # ── 1. Stop Telegram Bot ──
+        # 1. Stop Telegram Bot
         print("[SHUTDOWN] Stopping Telegram Bot...")
         try:
             if self.app:
@@ -905,7 +852,7 @@ class CryptoSignalBotMaster:
             print("[SHUTDOWN]   ⚠️ Telegram error: "
                   "{}".format(e))
 
-        # ── 2. Stop Workers ──
+        # 2. Stop Workers
         print("[SHUTDOWN] Stopping background workers...")
         for task in self._workers:
             task.cancel()
@@ -913,11 +860,10 @@ class CryptoSignalBotMaster:
                 await task
             except asyncio.CancelledError:
                 pass
-        print("[SHUTDOWN]   ✅ {} worker(s) stopped".format(
-            len(self._workers)
-        ))
+        print("[SHUTDOWN]   ✅ {} worker(s) stopped"
+              .format(len(self._workers)))
 
-        # ── 3. Stop WebSocket ──
+        # 3. Stop WebSocket
         print("[SHUTDOWN] Stopping WebSocket...")
         try:
             if self._ws_task is not None:
@@ -933,7 +879,7 @@ class CryptoSignalBotMaster:
             print("[SHUTDOWN]   ⚠️ WebSocket error: "
                   "{}".format(e))
 
-        # ── 4. Close HTTP ──
+        # 4. Close HTTP
         print("[SHUTDOWN] Closing HTTP connections...")
         try:
             if fetcher:
@@ -943,7 +889,7 @@ class CryptoSignalBotMaster:
             print("[SHUTDOWN]   ⚠️ HTTP error: "
                   "{}".format(e))
 
-        # ── 5. Final Statistics ──
+        # 5. Final Statistics
         print("\n[SHUTDOWN] ── Final Statistics ──")
         print("[SHUTDOWN]   Cycles run      : {}".format(
             self.cycle_count
@@ -956,36 +902,54 @@ class CryptoSignalBotMaster:
             uptime = datetime.now() - self.start_time
             total_seconds = uptime.total_seconds()
             hours = int(total_seconds // 3600)
-            minutes = int((total_seconds % 3600) // 60)
+            minutes = int(
+                (total_seconds % 3600) // 60
+            )
             secs = int(total_seconds % 60)
             print("[SHUTDOWN]   Uptime          : "
-                  "{}h {}m {}s".format(hours, minutes, secs))
+                  "{}h {}m {}s".format(
+                      hours, minutes, secs
+                  ))
 
         if PAYMENT_LOADED and payment_manager:
             stats = payment_manager.get_payment_stats()
-            print("[SHUTDOWN]   Payments        : {} total, "
-                  "{} completed".format(
+            print("[SHUTDOWN]   Payments        : "
+                  "{} total, {} completed".format(
                       stats.get("total_payments", 0),
                       stats.get("completed", 0),
                   ))
 
         if AUTH_LOADED and auth_manager:
-            sec_stats = auth_manager.get_security_stats()
-            print("[SHUTDOWN]   Active subs     : {}".format(
-                sec_stats.get("active_subscriptions", 0)
-            ))
-            print("[SHUTDOWN]   Tokens issued   : {}".format(
-                sec_stats.get("total_tokens", 0)
-            ))
+            sec_stats = (
+                auth_manager.get_security_stats()
+            )
+            print("[SHUTDOWN]   Active subs     : "
+                  "{}".format(
+                      sec_stats.get(
+                          "active_subscriptions", 0
+                      )
+                  ))
+            print("[SHUTDOWN]   Tokens issued   : "
+                  "{}".format(
+                      sec_stats.get(
+                          "total_tokens", 0
+                      )
+                  ))
 
         if signal_sender:
             sender_stats = signal_sender.get_stats()
-            print("[SHUTDOWN]   Signals sent    : {}".format(
-                sender_stats.get("total_sent", 0)
-            ))
-            print("[SHUTDOWN]   Blocked users   : {}".format(
-                sender_stats.get("blocked_users", 0)
-            ))
+            print("[SHUTDOWN]   Signals sent    : "
+                  "{}".format(
+                      sender_stats.get(
+                          "total_sent", 0
+                      )
+                  ))
+            print("[SHUTDOWN]   Blocked users   : "
+                  "{}".format(
+                      sender_stats.get(
+                          "blocked_users", 0
+                      )
+                  ))
 
         if bot_logger:
             bot_logger.log_shutdown("User exit")
@@ -1033,4 +997,4 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
     finally:
-        print("[MAIN] Process ended")    
+        print("[MAIN] Process ended")        

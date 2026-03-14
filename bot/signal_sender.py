@@ -100,6 +100,8 @@ class SignalSender:
         ("SUPPORT_RESISTANCE", "S/R Levels", "📏"),
         ("CANDLE_PATTERNS", "Candles", "🕯️"),
         ("OBV", "OBV", "💧"),
+        ("VWAP", "VWAP", "💰"),
+        ("STOCHASTIC_RSI", "StochRSI", "⚡"),
     ]
 
     # Direction emoji mapping
